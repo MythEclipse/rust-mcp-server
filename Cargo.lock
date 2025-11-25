@@ -644,12 +644,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
- "hyper",
  "once_cell",
  "proc-macro2",
  "quote",
  "regex",
  "rmcp",
+ "schemars",
  "serde",
  "serde_json",
  "syn",

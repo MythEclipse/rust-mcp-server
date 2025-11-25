@@ -1,14 +1,19 @@
 use anyhow::Result;
-use rmcp::handler::server::router::Router;
-use rmcp::handler::server::Server;
-use rmcp::transport::StdioTransport;
-use rmcp::model::{CallToolRequest, CallToolResult, Content, Tool, ToolInputSchema};
+use rmcp::{
+    ErrorData as McpError,
+    ServerHandler,
+    handler::server::wrapper::Parameters,
+    model::*,
+    tool,
+    tool_router,
+    ServiceExt,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 use walkdir::WalkDir;
-use syn::{visit::Visit, File, spanned::Spanned};
+use syn::visit::Visit;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Position {
@@ -22,37 +27,14 @@ pub struct Range {
     pub end: Position,
 }
 
-#[derive(Clone)]
-struct AstCache {
-    map: Arc<RwLock<HashMap<String, Arc<File>>>>,
-}
-
-impl AstCache {
-    fn new() -> Self {
-        Self { map: Arc::new(RwLock::new(HashMap::new())) }
-    }
-
-    async fn insert(&self, path: String, ast: File) {
-        self.map.write().await.insert(path, Arc::new(ast));
-    }
-
-    async fn get(&self, path: &str) -> Option<Arc<File>> {
-        self.map.read().await.get(path).cloned()
-    }
-
-    async fn get_all(&self) -> HashMap<String, Arc<File>> {
-        self.map.read().await.clone()
-    }
-}
-
-#[derive(Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Diagnostic {
     pub message: String,
     pub range: Range,
     pub severity: String,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SymbolInfo {
     pub kind: String,
     pub name: String,
@@ -60,15 +42,43 @@ pub struct SymbolInfo {
     pub range: Range,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ReferenceLocation {
     pub file: String,
     pub range: Range,
 }
 
-struct SymbolCollector {
-    file: String,
-    out: Vec<SymbolInfo>,
+#[derive(Clone)]
+pub struct AstCache {
+    cache: Arc<RwLock<HashMap<String, String>>>,
+}
+
+impl AstCache {
+    pub fn new() -> Self {
+        Self {
+            cache: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    pub async fn insert(&self, path: String, code: String) {
+        let mut map = self.cache.write().await;
+        map.insert(path, code);
+    }
+
+    pub async fn get(&self, path: &str) -> Option<String> {
+        let map = self.cache.read().await;
+        map.get(path).cloned()
+    }
+
+    pub async fn get_all(&self) -> HashMap<String, String> {
+        let map = self.cache.read().await;
+        map.clone()
+    }
+}
+
+pub struct SymbolCollector {
+    pub file: String,
+    pub out: Vec<SymbolInfo>,
 }
 
 impl<'ast> Visit<'ast> for SymbolCollector {
@@ -141,15 +151,15 @@ impl<'ast> Visit<'ast> for SymbolCollector {
     }
 }
 
-struct ReferenceFinder {
-    target_name: String,
-    file: String,
-    matches: Vec<ReferenceLocation>,
+pub struct ReferenceFinder {
+    pub target_name: String,
+    pub file: String,
+    pub matches: Vec<ReferenceLocation>,
 }
 
 impl<'ast> Visit<'ast> for ReferenceFinder {
-    fn visit_ident(&mut self, i: &'ast proc_macro2::Ident) {
-        if i.to_string() == self.target_name {
+    fn visit_ident(&mut self, i: &'ast syn::Ident) {
+        if i == &self.target_name {
             let span = i.span();
             let start = span.start();
             let end = span.end();
@@ -182,197 +192,182 @@ impl<'ast> Visit<'ast> for ReferenceFinder {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let cache = AstCache::new();
-    let router = Router::new();
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct CheckFileParams {
+    pub path: String,
+}
 
-    let check_file_cache = cache.clone();
-    let router = router.tool(
-        Tool::new(
-            "check_file",
-            "Parse and check a Rust file for syntax errors",
-            ToolInputSchema::new(&json!({
-                "type": "object",
-                "properties": {
-                    "path": { "type": "string" }
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct IndexWorkspaceParams {
+    pub root: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct GotoDefinitionParams {
+    pub name: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct FindReferencesParams {
+    pub name: String,
+}
+
+#[derive(Clone)]
+pub struct MyServer {
+    cache: AstCache,
+}
+
+impl MyServer {
+    pub fn new() -> Self {
+        Self {
+            cache: AstCache::new(),
+        }
+    }
+}
+
+#[tool_router]
+impl MyServer {
+    #[tool(description = "Parse and check a Rust file for syntax errors")]
+    async fn check_file(
+        &self,
+        Parameters(CheckFileParams { path }): Parameters<CheckFileParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let code = tokio::fs::read_to_string(&path).await
+            .map_err(|e| McpError::invalid_params("Failed to read file", Some(json!({ "error": e.to_string() }))))?;
+        
+        let diagnostics = if let Err(e) = syn::parse_file(&code) {
+            let span = e.span();
+            let start = span.start();
+            let end = span.end();
+            vec![Diagnostic {
+                message: e.to_string(),
+                range: Range {
+                    start: Position { line: start.line, character: start.column },
+                    end: Position { line: end.line, character: end.column },
                 },
-                "required": ["path"]
-            })),
-        ),
-        move |req: CallToolRequest| {
-            let cache = check_file_cache.clone();
-            Box::pin(async move {
-                let path = req.arguments.get("path").and_then(|v| v.as_str()).ok_or_else(|| anyhow::anyhow!("Missing path"))?;
-                let code = tokio::fs::read_to_string(path).await?;
-                
-                let diagnostics = match syn::parse_file(&code) {
-                    Ok(ast) => {
-                        cache.insert(path.to_string(), ast).await;
-                        vec![]
-                    },
-                    Err(e) => {
-                        let span = e.span();
-                        let start = span.start();
-                        let end = span.end();
-                        vec![Diagnostic {
-                            message: e.to_string(),
-                            range: Range {
-                                start: Position { line: start.line, character: start.column },
-                                end: Position { line: end.line, character: end.column },
-                            },
-                            severity: "error".to_string(),
-                        }]
-                    }
-                };
-                
-                Ok(CallToolResult {
-                    content: vec![Content::Text(serde_json::to_string(&diagnostics)?)],
-                    is_error: false,
-                })
-            })
-        },
-    );
+                severity: "error".to_string(),
+            }]
+        } else {
+            self.cache.insert(path.to_string(), code.clone()).await;
+            vec![]
+        };
+        
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&diagnostics).map_err(|e| McpError::internal_error(e.to_string(), None))?
+        )]))
+    }
 
-    let index_cache = cache.clone();
-    let router = router.tool(
-        Tool::new(
-            "index_workspace",
-            "Index all Rust files in a directory",
-            ToolInputSchema::new(&json!({
-                "type": "object",
-                "properties": {
-                    "root": { "type": "string" }
-                },
-                "required": ["root"]
-            })),
-        ),
-        move |req: CallToolRequest| {
-            let cache = index_cache.clone();
-            Box::pin(async move {
-                let root = req.arguments.get("root").and_then(|v| v.as_str()).ok_or_else(|| anyhow::anyhow!("Missing root"))?;
-                let mut symbols = Vec::new();
+    #[tool(description = "Index all Rust files in a directory")]
+    async fn index_workspace(
+        &self,
+        Parameters(IndexWorkspaceParams { root }): Parameters<IndexWorkspaceParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut symbols = Vec::new();
 
-                for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
-                    if !entry.file_type().is_file() { continue; }
-                    let path = entry.path().to_string_lossy().to_string();
-                    if !path.ends_with(".rs") { continue; }
+        for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
+            if !entry.file_type().is_file() { continue; }
+            let path = entry.path().to_string_lossy().to_string();
+            if !path.ends_with(".rs") { continue; }
 
-                    let ast_opt = if let Some(ast) = cache.get(&path).await {
-                        Some(ast)
-                    } else {
-                        if let Ok(code) = tokio::fs::read_to_string(&path).await {
-                            if let Ok(parsed) = syn::parse_file(&code) {
-                                cache.insert(path.clone(), parsed.clone()).await;
-                                Some(Arc::new(parsed))
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    };
-
-                    if let Some(ast) = ast_opt {
-                        let mut collector = SymbolCollector {
-                            file: path.clone(),
-                            out: Vec::new(),
-                        };
-                        collector.visit_file(&ast);
-                        symbols.extend(collector.out);
-                    }
+            let code_opt = if let Some(code) = self.cache.get(&path).await {
+                Some(code)
+            } else {
+                if let Ok(code) = tokio::fs::read_to_string(&path).await {
+                    self.cache.insert(path.clone(), code.clone()).await;
+                    Some(code)
+                } else {
+                    None
                 }
-                
-                Ok(CallToolResult {
-                    content: vec![Content::Text(serde_json::to_string(&symbols)?)],
-                    is_error: false,
-                })
-            })
-        },
-    );
+            };
 
-    let def_cache = cache.clone();
-    let router = router.tool(
-        Tool::new(
-            "goto_definition",
-            "Find definition of a symbol",
-            ToolInputSchema::new(&json!({
-                "type": "object",
-                "properties": {
-                    "name": { "type": "string" }
-                },
-                "required": ["name"]
-            })),
-        ),
-        move |req: CallToolRequest| {
-            let cache = def_cache.clone();
-            Box::pin(async move {
-                let name = req.arguments.get("name").and_then(|v| v.as_str()).ok_or_else(|| anyhow::anyhow!("Missing name"))?;
-                let mut results = Vec::new();
-                let map = cache.get_all().await;
-                
-                for (path, ast) in map.iter() {
+            if let Some(code) = code_opt {
+                if let Ok(ast) = syn::parse_file(&code) {
                     let mut collector = SymbolCollector {
                         file: path.clone(),
                         out: Vec::new(),
                     };
-                    collector.visit_file(ast);
-                    for sym in collector.out {
-                        if sym.name == name {
-                            results.push(sym);
-                        }
+                    collector.visit_file(&ast);
+                    symbols.extend(collector.out);
+                }
+            }
+        }
+        
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&symbols).map_err(|e| McpError::internal_error(e.to_string(), None))?
+        )]))
+    }
+
+    #[tool(description = "Find definition of a symbol")]
+    async fn goto_definition(
+        &self,
+        Parameters(GotoDefinitionParams { name }): Parameters<GotoDefinitionParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut results = Vec::new();
+        let code_map = self.cache.get_all().await;
+        
+        for (path, code) in code_map.iter() {
+            if let Ok(ast) = syn::parse_file(code) {
+                let mut collector = SymbolCollector {
+                    file: path.clone(),
+                    out: Vec::new(),
+                };
+                collector.visit_file(&ast);
+                for sym in collector.out {
+                    if sym.name == name {
+                        results.push(sym);
                     }
                 }
-                
-                Ok(CallToolResult {
-                    content: vec![Content::Text(serde_json::to_string(&results)?)],
-                    is_error: false,
-                })
-            })
-        },
-    );
+            }
+        }
+        
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&results).map_err(|e| McpError::internal_error(e.to_string(), None))?
+        )]))
+    }
 
-    let refs_cache = cache.clone();
-    let router = router.tool(
-        Tool::new(
-            "find_references",
-            "Find references of a symbol",
-            ToolInputSchema::new(&json!({
-                "type": "object",
-                "properties": {
-                    "name": { "type": "string" }
-                },
-                "required": ["name"]
-            })),
-        ),
-        move |req: CallToolRequest| {
-            let cache = refs_cache.clone();
-            Box::pin(async move {
-                let name = req.arguments.get("name").and_then(|v| v.as_str()).ok_or_else(|| anyhow::anyhow!("Missing name"))?;
-                let mut refs = Vec::new();
-                let map = cache.get_all().await;
+    #[tool(description = "Find references of a symbol")]
+    async fn find_references(
+        &self,
+        Parameters(FindReferencesParams { name }): Parameters<FindReferencesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut refs = Vec::new();
+        let code_map = self.cache.get_all().await;
 
-                for (path, ast) in map.iter() {
-                    let mut finder = ReferenceFinder {
-                        target_name: name.to_string(),
-                        file: path.clone(),
-                        matches: Vec::new(),
-                    };
-                    finder.visit_file(ast);
-                    refs.extend(finder.matches);
-                }
+        for (path, code) in code_map.iter() {
+            if let Ok(ast) = syn::parse_file(code) {
+                let mut finder = ReferenceFinder {
+                    target_name: name.to_string(),
+                    file: path.clone(),
+                    matches: Vec::new(),
+                };
+                finder.visit_file(&ast);
+                refs.extend(finder.matches);
+            }
+        }
 
-                Ok(CallToolResult {
-                    content: vec![Content::Text(serde_json::to_string(&refs)?)],
-                    is_error: false,
-                })
-            })
-        },
-    );
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&refs).map_err(|e| McpError::internal_error(e.to_string(), None))?
+        )]))
+    }
+}
 
-    let transport = StdioTransport::new();
-    let server = Server::new(router, transport);
+impl ServerHandler for MyServer {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo {
+            protocol_version: ProtocolVersion::V_2024_11_05,
+            capabilities: ServerCapabilities::builder()
+                .enable_tools()
+                .build(),
+            server_info: Implementation::from_build_env(),
+            instructions: Some("This server provides Rust code analysis tools.".to_string()),
+        }
+    }
+}
 
-    server.start().await?;
+#[tokio::main]
+async fn main() -> Result<()> {
+    let server = MyServer::new();
+    let service = server.serve(rmcp::transport::stdio()).await?;
+    service.waiting().await?;
     Ok(())
 }
