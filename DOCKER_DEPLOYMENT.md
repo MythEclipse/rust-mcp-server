@@ -17,19 +17,17 @@ docker run --rm -i mytheclipse/rust-mcp-server:latest
 ### Using Docker Compose
 
 ```bash
-# Clone the repository
-git clone https://github.com/MythEclipse/rust-mcp-server.git
-cd rust-mcp-server
-
-# Start the service
+# Start the service (uses Docker Hub image automatically)
 docker-compose up -d
 
 # View logs
-docker-compose logs -f mcp-server
+docker-compose logs -f rust-mcp-server
 
 # Stop the service
 docker-compose down
 ```
+
+For development with local changes, uncomment the `rust-mcp-server-dev` service in `docker-compose.yml`.
 
 ## Development Setup
 

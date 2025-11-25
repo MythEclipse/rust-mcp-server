@@ -1,14 +1,27 @@
 version: '3.8'
 
 services:
+  # Production service using Docker Hub image
   rust-mcp-server:
-    build: .
+    image: mytheclipse/rust-mcp-server:latest
     container_name: rust-mcp-server
+    restart: unless-stopped
     # Uncomment the following lines if you need to mount volumes
     # volumes:
     #   - ./data:/app/data
     #   - ./logs:/app/logs
-    restart: unless-stopped
     # MCP servers typically communicate via stdio, so no ports are exposed
     # ports:
     #   - "3000:3000"
+
+  # Development service (uncomment to use for development)
+  # rust-mcp-server-dev:
+  #   build: .
+  #   container_name: rust-mcp-server-dev
+  #   volumes:
+  #     - .:/app
+  #     - /app/target
+  #   environment:
+  #     - RUST_LOG=debug
+  #   command: cargo run
+  #   restart: unless-stopped

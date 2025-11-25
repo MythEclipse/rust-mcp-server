@@ -33,50 +33,44 @@ This project includes Docker support for easy deployment:
 
 ### Prerequisites
 
-- Docker and Docker Compose
-- Git (optional, for cloning the repository)
+- Docker and Docker Compose (for Docker Hub usage)
+- Git (optional, for development)
+- Rust 1.70+ (only if building from source)
 
-**Note**: The Docker build uses Rust nightly to support the latest MCP SDK features (edition 2024). No local Rust installation is required.
+**Note**: For most users, Docker is the only requirement. The Docker image uses Rust nightly to support the latest MCP SDK features.
 
-### Quick Start with Docker
+### Docker Hub Installation (Recommended)
 
-1. **Clone the repository:**
 ```bash
+# Method 1: Direct run (downloads automatically)
+docker run --rm -i mytheclipse/rust-mcp-server:latest
+
+# Method 2: Pull first, then run
+docker pull mytheclipse/rust-mcp-server:latest
+docker run --rm -i mytheclipse/rust-mcp-server:latest
+
+# Method 3: Using Docker Compose
+docker run --rm -i -v $(pwd):/workspace mytheclipse/rust-mcp-server:latest
+```
+
+### Development Installation
+
+```bash
+# Clone repository
 git clone https://github.com/MythEclipse/rust-mcp-server.git
 cd rust-mcp-server
-```
 
-2. **Build and run with Docker Compose:**
-```bash
+# Run with Docker Compose (recommended for development)
 docker-compose up --build
-```
 
-3. **Or build and run manually:**
-```bash
-# Build the Docker image
+# Or build and run manually
 docker build -t rust-mcp-server .
-
-# Run the container
-docker run rust-mcp-server
+docker run --rm -i rust-mcp-server
 ```
 
-### Using Pre-built Docker Image from Docker Hub
+### Manual Build (Advanced Users)
 
-For convenience, you can also use the pre-built image from Docker Hub:
-
-```bash
-# Pull the image
-docker pull mytheclipse/rust-mcp-server:latest
-
-# Run the container
-docker run mytheclipse/rust-mcp-server:latest
-```
-
-**Note**: The Docker Hub image is automatically built and updated with the latest code changes.
-
-### Manual Build (Alternative)
-
-If you prefer to build manually:
+If you prefer to build from source:
 
 #### Prerequisites
 
@@ -89,28 +83,52 @@ If you prefer to build manually:
 git clone https://github.com/MythEclipse/rust-mcp-server.git
 cd rust-mcp-server
 cargo build --release
+./target/release/rust-mcp-server
 ```
 
 ## Usage
 
 ### Running the MCP Server
 
-#### With Docker (Recommended)
+#### Docker Hub (Recommended)
 
 ```bash
-# Quick start with Docker Compose
-docker-compose up --build
+# Run the latest version from Docker Hub
+docker run --rm -i mytheclipse/rust-mcp-server:latest
 
-# Or run directly with Docker
-docker run rust-mcp-server
+# Run with workspace volume mounting (for file analysis)
+docker run --rm -i -v $(pwd):/workspace mytheclipse/rust-mcp-server:latest
 
 # Run in background
-docker run -d rust-mcp-server
+docker run -d --name rust-mcp-server mytheclipse/rust-mcp-server:latest
+
+# Stop background container
+docker stop rust-mcp-server && docker rm rust-mcp-server
 ```
 
-#### Manual Run (Alternative)
+#### Development with Docker Compose
 
-If you built manually:
+```bash
+# Clone repository (for development)
+git clone https://github.com/MythEclipse/rust-mcp-server.git
+cd rust-mcp-server
+
+# Run with hot reload
+docker-compose up --build
+
+# Run in background
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop
+docker-compose down
+```
+
+#### Manual Run (Advanced)
+
+If you built from source:
 
 ```bash
 # Run the compiled binary
@@ -375,8 +393,8 @@ cargo build
 #### With Docker
 
 ```bash
-# Run tests in Docker container
-docker run --rm rust-mcp-server cargo test
+# Run tests in Docker container (for development)
+docker run --rm -v $(pwd):/app mytheclipse/rust-mcp-server:latest cargo test
 ```
 
 #### Manual Testing
