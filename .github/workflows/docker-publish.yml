@@ -54,7 +54,7 @@ jobs:
 
     - name: Test Docker image
       run: |
-        # Pull the latest image
+        # Pull the latest imagea
         docker pull mytheclipse/rust-mcp-server:latest
 
         # Test that the binary exists and is executable
