@@ -60,6 +60,20 @@ docker build -t rust-mcp-server .
 docker run rust-mcp-server
 ```
 
+### Using Pre-built Docker Image from Docker Hub
+
+For convenience, you can also use the pre-built image from Docker Hub:
+
+```bash
+# Pull the image
+docker pull mytheclipse/rust-mcp-server:latest
+
+# Run the container
+docker run mytheclipse/rust-mcp-server:latest
+```
+
+**Note**: The Docker Hub image is automatically built and updated with the latest code changes.
+
 ### Manual Build (Alternative)
 
 If you prefer to build manually:
@@ -421,7 +435,7 @@ To use this MCP server with MCP-compatible clients, configure it to run the Dock
   "mcpServers": {
     "rust-mcp-server": {
       "command": "docker",
-      "args": ["run", "--rm", "rust-mcp-server"]
+      "args": ["run", "--rm", "mytheclipse/rust-mcp-server:latest"]
     }
   }
 }
@@ -434,7 +448,7 @@ To use this MCP server with MCP-compatible clients, configure it to run the Dock
   "mcpServers": {
     "rust-mcp-server": {
       "command": "docker",
-      "args": ["run", "--rm", "rust-mcp-server"]
+      "args": ["run", "--rm", "mytheclipse/rust-mcp-server:latest"]
     }
   }
 }
@@ -471,15 +485,24 @@ The server doesn't require any environment variables for basic operation. Howeve
 ### Docker Image Management
 
 ```bash
-# Build the image
+# Build the image locally
 docker build -t rust-mcp-server .
 
+# Pull from Docker Hub
+docker pull mytheclipse/rust-mcp-server:latest
+
 # Run with custom environment variables
-docker run -e RUST_LOG=debug rust-mcp-server
+docker run -e RUST_LOG=debug mytheclipse/rust-mcp-server:latest
 
 # Run with volume mounts (if you need to access host files)
-docker run -v /host/path:/container/path rust-mcp-server
+docker run -v /host/path:/container/path mytheclipse/rust-mcp-server:latest
 ```
+
+### Publishing to Docker Hub
+
+For detailed instructions on how to push this image to Docker Hub, see [DOCKER_HUB_DEPLOYMENT.md](DOCKER_HUB_DEPLOYMENT.md).
+
+The official Docker Hub repository is: **`mytheclipse/rust-mcp-server`**
 
 ### Configuration Options
 
