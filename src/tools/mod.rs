@@ -24,7 +24,7 @@ impl MyServer {
         check_file::check_file(self, params).await
     }
 
-    #[tool(description = "Index all Rust files in a directory")]
+    #[tool(description = "Index all Rust files in a directory and build call graph, type usage graph, and module dependency graph for AI navigation and code analysis")]
     pub async fn index_workspace(
         &self,
         params: Parameters<IndexWorkspaceParams>,
