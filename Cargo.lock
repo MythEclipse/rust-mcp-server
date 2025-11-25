@@ -654,7 +654,8 @@ checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 [[package]]
 name = "rmcp"
 version = "0.9.1"
-source = "git+https://github.com/modelcontextprotocol/rust-sdk?branch=main#2b60f8af0ffccf6ec9f21ac8f95feecfc28dea18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eaa07b85b779d1e1df52dd79f6c6bffbe005b191f07290136cc42a142da3409a"
 dependencies = [
  "async-trait",
  "base64",
@@ -675,7 +676,8 @@ dependencies = [
 [[package]]
 name = "rmcp-macros"
 version = "0.9.1"
-source = "git+https://github.com/modelcontextprotocol/rust-sdk?branch=main#2b60f8af0ffccf6ec9f21ac8f95feecfc28dea18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f6fa09933cac0d0204c8a5d647f558425538ed6a0134b1ebb1ae4dc00c96db3"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -860,9 +862,9 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "signal-hook-registry"
-version = "1.4.6"
+version = "1.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2a4719bff48cee6b39d12c020eeb490953ad2443b7055bd0b21fca26bd8c28b"
+checksum = "7664a098b8e616bdfcc2dc0e9ac44eb231eedf41db4e9fe95d8d32ec728dedad"
 dependencies = [
  "libc",
 ]

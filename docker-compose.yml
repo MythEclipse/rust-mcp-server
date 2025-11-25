@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  rust-mcp-server:
+    build: .
+    container_name: rust-mcp-server
+    # Uncomment the following lines if you need to mount volumes
+    # volumes:
+    #   - ./data:/app/data
+    #   - ./logs:/app/logs
+    restart: unless-stopped
+    # MCP servers typically communicate via stdio, so no ports are exposed
+    # ports:
+    #   - "3000:3000"
